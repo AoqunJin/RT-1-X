@@ -30,17 +30,23 @@ NUM_IMAGE_TOKENS = 81
 PER_DEVICE_BATCH_SIZE = 4
 LEARNING_RATE = 1e-4
 CHECKPOINT_LOAD_DIR = "/home/sora/workspace/models/rt_1_x_jax"
-CHECKPOINT_OUT_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_20e"
+CHECKPOINT_OUT_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_100e"
 NUM_TRAIN_STEPS = 10_000  # actual should be > 1M
 SAVE_CHECKPOINT_EVERY_STEPS = 5_000
+VAL_PER_STEPS = 1_000
+NUM_VAL_STEPS = 100
 LOG_LOSS_EVERY_STEPS = 100
 WANDB_PROJECT_NAME = "rt_1_x_jax"
-WANDB_RUN_NAME = "train_metaworld_ml10_20e"
+WANDB_RUN_NAME = "train_metaworld_ml10_100e"
 DATASET_NAME_TO_WEIGHTS = {
-    "rt_1_metaworld_ml10_20e": 100,
-    # "rt_1_metaworld_ml10_40e": 100,
-    # "rt_1_metaworld_ml10_100e": 100,
-    # "rt_1_metaworld_ml45_20e": 100
+    "train": {
+        # "rt_1_metaworld_ml10_40e": 1,
+        "rt_1_metaworld_ml10_100e": 1,
+        # "rt_1_metaworld_ml45_20e": 1,
+    },
+    "val": {
+        "rt_1_metaworld_ml10_20e": 1,
+    }
 }
 
 def configure_jax():
@@ -55,23 +61,42 @@ def configure_jax():
 def initialize_datasets():
     """Initializes and prepares datasets for training."""
 
-    DATASET_NAME_TO_TRAJECTORY_DATASET = {
+    name_to_dataset = {
         k: get_trajectory_dataset(**DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS[k])
-        for k in DATASET_NAME_TO_WEIGHTS.keys()
+        for k in DATASET_NAME_TO_WEIGHTS["train"].keys()
     }
-    datasets = [
-        dataset.shuffle(10) for dataset in DATASET_NAME_TO_TRAJECTORY_DATASET.values()
-    ]
+    datasets = [dataset for dataset in name_to_dataset.values()]
     weights = [
-        float(DATASET_NAME_TO_WEIGHTS[name])
-        for name in DATASET_NAME_TO_TRAJECTORY_DATASET.keys()
+        float(DATASET_NAME_TO_WEIGHTS["train"][name])
+        for name in name_to_dataset.keys()
     ]
 
     train_dataset = tf.data.Dataset.sample_from_datasets(datasets, weights=weights)
     train_dataset = prepare_for_model_input(
         train_dataset, target_height=300, target_width=300, training=True
     )
-    return train_dataset
+    
+    # Prepare validation dataset if present
+    val_dataset = None
+    if "val" in DATASET_NAME_TO_WEIGHTS:
+        name_to_dataset = {
+            k: get_trajectory_dataset(**DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS[k])
+            for k in DATASET_NAME_TO_WEIGHTS["val"].keys()
+        }
+        
+        val_datasets = [dataset for dataset in name_to_dataset.values()]
+        val_weights = [
+            float(DATASET_NAME_TO_WEIGHTS["val"][name])
+            for name in name_to_dataset.keys()
+        ]
+        val_dataset = tf.data.Dataset.sample_from_datasets(
+            val_datasets, weights=val_weights
+        )
+        val_dataset = prepare_for_model_input(
+            val_dataset, target_height=300, target_width=300, training=False
+        )
+
+    return train_dataset, val_dataset
 
 
 def reshard(tree, shardings):
@@ -195,6 +220,28 @@ def train(batch, state, model, optimizer, rng):
     return new_state, metrics_update
 
 
+def evaluate(batch, state, model, rng):
+    """Performs a single training step."""
+    rng, loss_rng = jax.random.split(rng)
+
+    def loss_fn(params):
+        variables = {"params": params, "batch_stats": state.batch_stats}
+        per_example_loss, accuracy, new_variables = rt1_loss(
+            model, batch=batch, variables=variables, rng=loss_rng
+        )
+        loss = jnp.mean(per_example_loss)
+        return loss, (accuracy, new_variables["batch_stats"])
+
+    (loss, (accuracy, new_batch_stats)) = loss_fn(state.params)
+
+    loss = jnp.mean(loss)
+
+    metrics_update = {
+        "loss": loss, "accuracy": accuracy
+    }
+    return state, metrics_update
+
+
 def rt1_loss(
     model,
     batch,
@@ -301,18 +348,27 @@ def main():
     ##################################################################################################################
     #                                     Prepare the dataset.                                                       #
     ##################################################################################################################
-    train_dataset = initialize_datasets()
+    train_dataset, val_dataset = initialize_datasets()
 
     global_batch_size = jax.device_count() * PER_DEVICE_BATCH_SIZE
     local_batch_size = jax.local_device_count() * PER_DEVICE_BATCH_SIZE
 
     train_dataset = train_dataset.repeat(-1)  # repeated indefinitely | repeat(num_epochs)
     # Larger shuffle buffer leads to better performance, but consumes more RAM
-    train_dataset = train_dataset.shuffle(buffer_size=10)
+    train_dataset = train_dataset.shuffle(buffer_size=1000)
     train_dataset = train_dataset.batch(local_batch_size, drop_remainder=True)
     train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
 
     train_iter = train_dataset.as_numpy_iterator()
+    
+    if val_dataset is not None:
+        val_dataset = val_dataset.repeat(-1)
+        val_dataset = val_dataset.shuffle(buffer_size=1000)
+        val_dataset = val_dataset.batch(local_batch_size, drop_remainder=True)
+        val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
+
+        val_iter = val_dataset.as_numpy_iterator()
+    
     sample_batch = jax.tree_map(lambda x: x, next(train_iter))
 
     print(f"Local batch size: {local_batch_size}")
@@ -384,6 +440,14 @@ def main():
         agent_train,
         out_shardings=(replicate_sharding, replicate_sharding),
     )
+    
+    if val_dataset is not None:
+        # Create the eval step.
+        agent_eval = functools.partial(evaluate, model=rt1x_model)
+        jitted_eval_step = jax.jit(
+            agent_eval,
+            out_shardings=(replicate_sharding, replicate_sharding),
+        )
 
     # The state should be resharded since we may have loaded pretrained weights
     # that need to be converted to jax.Arrays.
@@ -406,22 +470,19 @@ def main():
     #     variables={"params": state_repl.params, "batch_stats": state_repl.batch_stats}, 
     #     seqlen=15
     # )
-    
+    metrics_train_sum = None
     for step in range(NUM_TRAIN_STEPS):
-        try:
-            batch = next(train_iter)
-        except StopIteration as e:
-            break
-
+        batch = next(train_iter)
         batch = jax.tree_map(_form_gda, batch, global_data_shape)
-
         is_last_step = (step + 1 == NUM_TRAIN_STEPS)
 
         rng_repl = jax.random.fold_in(rng_repl, step)
 
-        state_repl, metrics_update = jitted_train_step(
+        state_repl, metrics_train_update = jitted_train_step(
             state=state_repl, batch=batch, rng=rng_repl
         )
+        if metrics_train_sum is None: metrics_train_sum = metrics_train_update
+        else: metrics_train_sum = jax.tree_map(lambda x, y: x + y, metrics_train_sum, metrics_train_update)
         ##################################################################################################################
         #                                               test                                                             #
         ##################################################################################################################      
@@ -433,12 +494,33 @@ def main():
         # target_action = np.concatenate((batch["action"]["world_vector"][0][-1], batch["action"]["gripper_closedness_action"][0][-1]))
         # print('Agent action:', agent_action, 'Target action:', target_action)
         ##################################################################################################################
-
+        if (step + 1) % VAL_PER_STEPS == 0:
+            metrics_eval_sum = None
+            for val_step in range(NUM_VAL_STEPS):
+                val_batch = next(val_iter)
+                val_batch = jax.tree_map(_form_gda, val_batch, global_data_shape)
+                rng_repl = jax.random.fold_in(rng_repl, val_step)
+                
+                _, metrics_eval_update = jitted_eval_step(
+                    state=state_repl, batch=val_batch, rng=rng_repl
+                )
+                if metrics_eval_sum is None: metrics_eval_sum = metrics_eval_update
+                else: metrics_eval_sum = jax.tree_map(lambda x, y: x + y, metrics_eval_sum, metrics_eval_update)
+            metrics_eval_update = jax.tree_map(lambda x: x / NUM_VAL_STEPS, metrics_eval_sum)
+        
         if (step + 1) % LOG_LOSS_EVERY_STEPS == 0 or is_last_step:
-            metrics_update = jax.device_get(metrics_update)
-            print(f"Metrics: step={step}, {metrics_update}")
+            metrics_train_update = jax.tree_map(lambda x: x / NUM_VAL_STEPS, metrics_train_sum)
+            metrics_train_update = jax.device_get(metrics_train_update)
+            log_dict = {"training": metrics_train_update}
+            metrics_train_sum = None
+            
+            if val_dataset is not None and (step + 1) % VAL_PER_STEPS == 0:
+                metrics_eval_update = jax.device_get(metrics_eval_update)
+                log_dict.update({"val":metrics_eval_update})
+                
+            print(f"Metrics: step={step}, {log_dict}")
             wandb.log(
-                flax.traverse_util.flatten_dict({"training": metrics_update}, sep="/"),
+                flax.traverse_util.flatten_dict(log_dict, sep="/"),
                 step=step,
             )
 

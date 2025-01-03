@@ -52,7 +52,9 @@ def main():
             episode_return = 0.0
 
             for j in range(500):
-                images.append(obs["image_primary"]) # [15, h, w, 3]
+                images.append(convert_dtype_and_crop_images(
+                    copy.deepcopy(obs["image_primary"]), (300, 300), training=False
+                ).numpy()) # [15, h, w, 3]
                 action = np.clip(expert.get_action(info["state"]), -1, 1)
                 obs, reward, done, trunc, info = env.step(action)
 
@@ -62,8 +64,9 @@ def main():
             save_images_vertically_with_border(np.array(images), border_size=10, output_path=f"./tmp/{name}_{i}.png")
             total_return += episode_return
             total_accuracy += int(done)
-
+            break
         print(f"Environment: {name}, Average return: {total_return / 20}, Average accuracy: {total_accuracy / 20}")
-
+        break
+    
 if __name__ == "__main__":
     main()

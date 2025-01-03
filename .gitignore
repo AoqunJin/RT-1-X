@@ -1,2 +1,6 @@
 __pycache__/
+outputs/
 wandb/
+sample_batch/
+tmp/
+*.log
