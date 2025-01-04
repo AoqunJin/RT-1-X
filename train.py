@@ -27,26 +27,27 @@ NUM_ACTION_TOKENS = 11
 LAYER_SIZE = 256
 VOCAB_SIZE = 512
 NUM_IMAGE_TOKENS = 81
-PER_DEVICE_BATCH_SIZE = 4
+PER_DEVICE_MICRO_BATCH_SIZE = 2
+GRADIENT_ACCUMULATION_STEPS = 4  # 2 * 4 = 8
 LEARNING_RATE = 1e-4
 CHECKPOINT_LOAD_DIR = "/home/sora/workspace/models/rt_1_x_jax"
-CHECKPOINT_OUT_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_100e"
-NUM_TRAIN_STEPS = 10_000  # actual should be > 1M
-SAVE_CHECKPOINT_EVERY_STEPS = 5_000
+CHECKPOINT_OUT_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_20e"
+NUM_TRAIN_STEPS = 20_000  # actual should be > 1M
+SAVE_CHECKPOINT_EVERY_STEPS = 10_000
 VAL_PER_STEPS = 1_000
 NUM_VAL_STEPS = 100
 LOG_LOSS_EVERY_STEPS = 100
 WANDB_PROJECT_NAME = "rt_1_x_jax"
-WANDB_RUN_NAME = "train_metaworld_ml10_100e"
+WANDB_RUN_NAME = "train_metaworld_ml10_20e"
 DATASET_NAME_TO_WEIGHTS = {
     "train": {
-        # "rt_1_metaworld_ml10_40e": 1,
-        "rt_1_metaworld_ml10_100e": 1,
-        # "rt_1_metaworld_ml45_20e": 1,
+        # "rt_1_metaworld_ml10_40e": 1.0,
+        # "rt_1_metaworld_ml10_100e": 1.0,
+        "rt_1_metaworld_ml10_20e": 1.0,
     },
-    "val": {
-        "rt_1_metaworld_ml10_20e": 1,
-    }
+    # "val": {
+    #     "rt_1_metaworld_ml10_20e": 1.0,
+    # }
 }
 
 def configure_jax():
@@ -350,8 +351,8 @@ def main():
     ##################################################################################################################
     train_dataset, val_dataset = initialize_datasets()
 
-    global_batch_size = jax.device_count() * PER_DEVICE_BATCH_SIZE
-    local_batch_size = jax.local_device_count() * PER_DEVICE_BATCH_SIZE
+    global_batch_size = jax.device_count() * PER_DEVICE_MICRO_BATCH_SIZE
+    local_batch_size = jax.local_device_count() * PER_DEVICE_MICRO_BATCH_SIZE
 
     train_dataset = train_dataset.repeat(-1)  # repeated indefinitely | repeat(num_epochs)
     # Larger shuffle buffer leads to better performance, but consumes more RAM
@@ -386,7 +387,7 @@ def main():
     # print(sample_batch['action']['world_vector'])
     # print(sample_batch['observation']['natural_language_embedding'])
     # save_images_vertically_with_border(sample_batch["observation"]["image"], border_size=10, output_path="sample_batch.png")
-    save_batch(sample_batch, output_dir="sample_batch")
+    # save_batch(sample_batch, output_dir="sample_batch")
     
     ##################################################################################################################
     #                                    Creating mesh and shardings.                                                #
@@ -420,7 +421,12 @@ def main():
     )
 
     optimizer = optax.adam(learning_rate=1e-4, eps=1e-7)
-
+    
+    if GRADIENT_ACCUMULATION_STEPS > 1:
+        optimizer = optax.MultiSteps(
+            optimizer, GRADIENT_ACCUMULATION_STEPS
+        )
+    
     agent_create_train_state = functools.partial(
         create_train_state, model=rt1x_model, optimizer=optimizer
     )
@@ -435,6 +441,16 @@ def main():
     state = create_train_state_jit(batch=sample_batch, rng=agent_rng)
 
     # Create the train step.
+    # if GRADIENT_ACCUMULATION_STEPS > 1:
+    #     agent_train = functools.partial(
+    #         train_with_accum,
+    #         model=rt1x_model,
+    #         optimizer=optimizer,
+    #         accum_steps=GRADIENT_ACCUMULATION_STEPS,
+    #     )
+    # else:
+    #     agent_train = functools.partial(train, model=rt1x_model, optimizer=optimizer)
+        
     agent_train = functools.partial(train, model=rt1x_model, optimizer=optimizer)
     jitted_train_step = jax.jit(
         agent_train,
@@ -494,7 +510,7 @@ def main():
         # target_action = np.concatenate((batch["action"]["world_vector"][0][-1], batch["action"]["gripper_closedness_action"][0][-1]))
         # print('Agent action:', agent_action, 'Target action:', target_action)
         ##################################################################################################################
-        if (step + 1) % VAL_PER_STEPS == 0:
+        if val_dataset is not None and (step + 1) % VAL_PER_STEPS == 0:
             metrics_eval_sum = None
             for val_step in range(NUM_VAL_STEPS):
                 val_batch = next(val_iter)

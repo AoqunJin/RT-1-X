@@ -93,7 +93,7 @@ def pad_initial_zero_episode(
 
 
 def get_trajectory_dataset(
-    builder_dir: str, step_map_fn, trajectory_length: int, split="train[:10]"
+    builder_dir: str, step_map_fn, trajectory_length: int, split="train"
 ):
     dataset_builder = tfds.builder_from_directory(builder_dir=builder_dir)
 
@@ -186,6 +186,15 @@ DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
         ),
     },
     "rt_1_metaworld_ml45_20e": {
+        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml45_20e/1.0.0/",
+        "trajectory_length": 15,
+        "step_map_fn": functools.partial(
+            step_map_fn,
+            map_observation=rt_1_map_observation,
+            map_action=metaworld_map_action,
+        ),
+    },
+    "rt_1_metaworld_ml45_40e": {
         "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml45_20e/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(

@@ -25,11 +25,11 @@ NUM_ACTION_TOKENS = 11
 LAYER_SIZE = 256
 VOCAB_SIZE = 512
 NUM_IMAGE_TOKENS = 81
-CHECKPOINT_LOAD_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_20e/checkpoint_9999"
+CHECKPOINT_LOAD_DIR = "/home/sora/workspace/models/rt_1_x_jax_metaworld_ml10_20e/checkpoint_19999"
 WANDB_PROJECT_NAME = "rt_1_x_jax"
-WANDB_RUN_NAME = "eval_metaworld_ml10_20e_train_10k"
+WANDB_RUN_NAME = "eval_metaworld_ml10_20e_test_20k"
 BENCHMARK = _env_dict.ML10_V2
-TEST_TYPE = "train"
+TEST_TYPE = "test"  # ["train" | "test"]
 
 
 @flax.struct.dataclass
@@ -308,8 +308,8 @@ def main():
                 ######################################################################################################
 
                 # TODO Simulate expert action
-                action = np.clip(expert.get_action(info["state"]), -1, 1)
-                action_labels = np.vstack((action_labels[1:], copy.deepcopy(action)))
+                # action = np.clip(expert.get_action(info["state"]), -1, 1)
+                # action_labels = np.vstack((action_labels[1:], copy.deepcopy(action)))
                 # print('Expert action:', action, 'Agent action:', agent_action)
                 # print('Action diff:', action - agent_action)
 
@@ -321,36 +321,36 @@ def main():
                 ######################################################################################################
                 #                                           Loss.                                                    #
                 ######################################################################################################
-                batch = {
-                    "observation": {
-                        "image": np.expand_dims(observation["image"], axis=0),
-                        "natural_language_embedding": np.expand_dims(
-                            observation["natural_language_embedding"], axis=0
-                        ),
-                    },
-                    "action": {
-                        "base_displacement_vector": np.zeros(
-                            (1, 15, 2), dtype=np.float32
-                        ),
-                        "base_displacement_vertical_rotation": np.zeros(
-                            (1, 15, 1), dtype=np.float32
-                        ),
-                        "gripper_closedness_action": np.expand_dims(
-                            action_labels[:, 3:4], axis=0
-                        ),
-                        "rotation_delta": np.zeros((1, 15, 3), dtype=np.float32),
-                        "terminate_episode": np.expand_dims(
-                            copy.deepcopy(terminate_episode), axis=0
-                        ),
-                        "world_vector": np.expand_dims(action_labels[:, :3], axis=0),
-                    },
-                }
-                batch = jax.tree_map(_form_gda, batch, global_data_shape)
+                # batch = {
+                #     "observation": {
+                #         "image": np.expand_dims(observation["image"], axis=0),
+                #         "natural_language_embedding": np.expand_dims(
+                #             observation["natural_language_embedding"], axis=0
+                #         ),
+                #     },
+                #     "action": {
+                #         "base_displacement_vector": np.zeros(
+                #             (1, 15, 2), dtype=np.float32
+                #         ),
+                #         "base_displacement_vertical_rotation": np.zeros(
+                #             (1, 15, 1), dtype=np.float32
+                #         ),
+                #         "gripper_closedness_action": np.expand_dims(
+                #             action_labels[:, 3:4], axis=0
+                #         ),
+                #         "rotation_delta": np.zeros((1, 15, 3), dtype=np.float32),
+                #         "terminate_episode": np.expand_dims(
+                #             copy.deepcopy(terminate_episode), axis=0
+                #         ),
+                #         "world_vector": np.expand_dims(action_labels[:, :3], axis=0),
+                #     },
+                # }
+                # batch = jax.tree_map(_form_gda, batch, global_data_shape)
 
-                _, metrics_update = jitted_eval_step(
-                    state=state_repl, batch=batch, rng=rng_repl
-                )
-                print(metrics_update)
+                # _, metrics_update = jitted_eval_step(
+                #     state=state_repl, batch=batch, rng=rng_repl
+                # )
+                # print(metrics_update)
                 # print(model_output)
                 ######################################################################################################
 

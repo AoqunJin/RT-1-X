@@ -4,3 +4,4 @@ wandb/
 sample_batch/
 tmp/
 *.log
+*.out
