@@ -1,82 +1,67 @@
-import logging
-import os
-from typing import Any, Optional, Sequence
-
 import jax
-from jax.experimental import multihost_utils
-from jax.experimental.compilation_cache import compilation_cache
-import jax.numpy as jnp
+import tensorflow as tf
 import numpy as np
 
 
-def host_broadcast_str(x: str) -> str:
-    """Broadcast_one_to_all, but with a string. Strings should all be the same length."""
-    multihost_utils.assert_equal(
-        len(x), f"String lengths are not equal: got {len(x)} for {jax.process_index()}"
-    )
-    encoded = np.array([ord(c) for c in x], dtype=np.uint8)
-    encoded = multihost_utils.broadcast_one_to_all(encoded)
-    return "".join([chr(u) for u in encoded])
+def configure_jax():
+    """Configures JAX settings for GPU memory and backend."""
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    tf.compat.v1.Session(config=config)
+    jax.config.update("jax_platform_name", "gpu")
+    jax.config.update("jax_xla_backend", "cuda")
 
 
-def shard_along_axis(x: Any, devices: Sequence[jax.Device], axis: int = 0) -> jax.Array:
-    """Shard a PyTree of arrays along a given axis, putting them on device in
-    the process. Works in multi-host setting as long as PyTrees are equal on all
-    hosts."""
-    sharding = jax.sharding.NamedSharding(
-        jax.sharding.Mesh(devices, "x"),
-        jax.sharding.PartitionSpec(*([None] * axis + ["x"])),
-    )
-    x = jax.tree_map(jnp.array, x)
-    return jax.tree_map(
-        lambda arr: jax.make_array_from_callback(
-            arr.shape, sharding, lambda index: arr[index]
-        ),
-        x,
-    )
+def tree_broadcast(prefix, target):
+    """Broadcasts a prefix tree to a full tree.
+
+    See big_vision.utils.tree_broadcast.
+
+    Args:
+      prefix: prefix pytree.
+      target: boradcast target for a prefix tree.
+
+    Returns:
+      prefix tree broadcasted to a target tree.
+    """
+
+    def _broadcast(leaf, subtree):
+        return jax.tree_map(lambda _: leaf, subtree)
+
+    return jax.tree_map(_broadcast, prefix, target)
 
 
-def merge_along_axis(x: Any, axis: int = 0) -> jax.Array:
-    """Convert a PyTree of host-local arrays to a global array, concatenating and sharding along
-    `axis`."""
-    return multihost_utils.host_local_array_to_global_array(
-        x,
-        jax.sharding.Mesh(jax.devices(), "x"),
-        jax.sharding.PartitionSpec(*([None] * axis + ["x"])),
-    )
+def reshard(tree, shardings):
+    """Take an arbitrarily sharded pytree and shard it according to `shardings`.
 
+    From `big_vision.utils.reshard`. See that doc for full details.
 
-def split_along_axis(x: Any, axis: int = 0) -> jax.Array:
-    """Convert a PyTree of global arrays to a host-local array, splitting along `axis`."""
-    return multihost_utils.global_array_to_host_local_array(
-        x,
-        jax.sharding.Mesh(jax.devices(), "x"),
-        jax.sharding.PartitionSpec(*([None] * axis + ["x"])),
-    )
+    Args:
+      tree: a pytree of arrays.
+      shardings: a (prefix) pytree of jax array shardings.
 
+    Returns:
+      A pytree of global jax arrays that follows provided shardings.
+    """
 
-def replicate(x: Any, devices: Optional[Sequence[jax.Device]] = None) -> jax.Array:
-    """Replicate a PyTree of arrays across devices. Works in multi-host setting
-    as long as PyTrees are equal on all hosts."""
-    if devices is None:
-        devices = jax.devices()
-    sharding = jax.sharding.PositionalSharding(devices).replicate()
-    x = jax.tree_map(jnp.array, x)
-    return jax.tree_map(
-        lambda arr: jax.make_array_from_callback(
-            arr.shape, sharding, lambda index: arr[index]
-        ),
-        x,
-    )
+    def _make_global_arr(x, shard, shape):
+        # Avoid unnecessary copies and transfers:
+        if hasattr(x, "sharding") and x.sharding.is_equivalent_to(
+            shard, len(shape)
+        ):  # pylint: disable=line-too-long
+            return x
+        if not getattr(x, "is_fully_addressable", True):
+            raise RuntimeError(
+                "Trying to reshard a non-fully-addressable array. "
+                "Please see the doc-comment for detailed explanation."
+            )
+        x = jax.device_get(x)  # Might be on local devices.
+        xs = [
+            jax.device_put(x[s], device=d)
+            for d, s in shard.addressable_devices_indices_map(shape).items()
+        ]
+        return jax.make_array_from_single_device_arrays(shape, shard, xs)
 
-
-def initialize_compilation_cache(
-    cache_dir=os.path.expanduser("~/.jax_compilation_cache"),
-):
-    """Initializes the Jax persistent compilation cache."""
-    compilation_cache.initialize_cache(cache_dir)
-    for logger in [logging.getLogger(name) for name in logging.root.manager.loggerDict]:
-        logger.addFilter(
-            lambda record: "Not writing persistent cache entry for"
-            not in record.getMessage()
-        )
+    shapes = jax.tree_map(np.shape, tree)
+    shardings = tree_broadcast(shardings, tree)
+    return jax.tree_map(_make_global_arr, tree, shardings, shapes)

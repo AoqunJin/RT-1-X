@@ -73,6 +73,16 @@ def metaworld_map_action(to_step: rlds.Step, from_step: rlds.Step):
     to_step[rlds.ACTION]["gripper_closedness_action"] = tf.expand_dims(from_step[rlds.ACTION][3], axis=0)
 
 
+def libero_map_action(to_step: rlds.Step, from_step: rlds.Step):
+    to_step[rlds.ACTION]["world_vector"] = from_step[rlds.ACTION][:3] * 2
+    to_step[rlds.ACTION]["terminate_episode"] = terminate_bool_to_act(
+        tf.cast(from_step[rlds.IS_TERMINAL], tf.float32)
+    )
+    # zero rotation
+    to_step[rlds.ACTION]["rotation_delta"] = from_step[rlds.ACTION][3:6]
+    to_step[rlds.ACTION]["gripper_closedness_action"] = tf.expand_dims(from_step[rlds.ACTION][6], axis=0)
+
+
 def pad_initial_zero_steps(
     steps: tf.data.Dataset, num_zero_step: int
 ) -> tf.data.Dataset:
@@ -157,9 +167,9 @@ def step_map_fn(step, map_observation: StepFnMapType, map_action: StepFnMapType)
 
 
 DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
-    # RT-1-metaworld
-    "rt_1_metaworld_ml10_20e": {
-        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml10_20e/1.0.0/",
+    # metaworld
+    "metaworld_ml10_50e": {
+        "builder_dir": "~/tensorflow_datasets/metaworld_ml10_50e/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(
             step_map_fn,
@@ -167,8 +177,8 @@ DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
             map_action=metaworld_map_action,
         ),
     },
-    "rt_1_metaworld_ml10_40e": {
-        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml10_40e/1.0.0/",
+    "metaworld_ml10_100e": {
+        "builder_dir": "~/tensorflow_datasets/metaworld_ml10_100e/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(
             step_map_fn,
@@ -176,8 +186,8 @@ DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
             map_action=metaworld_map_action,
         ),
     },
-    "rt_1_metaworld_ml10_100e": {
-        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml10_100e/1.0.0/",
+    "metaworld_ml45_50e": {
+        "builder_dir": "~/tensorflow_datasets/metaworld_ml45_50e/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(
             step_map_fn,
@@ -185,8 +195,8 @@ DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
             map_action=metaworld_map_action,
         ),
     },
-    "rt_1_metaworld_ml45_20e": {
-        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml45_20e/1.0.0/",
+    "metaworld_ml45_100e": {
+        "builder_dir": "~/tensorflow_datasets/metaworld_ml45_100e/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(
             step_map_fn,
@@ -194,13 +204,50 @@ DATASET_NAME_TO_TRAJECTORY_DATASET_KWARGS = {
             map_action=metaworld_map_action,
         ),
     },
-    "rt_1_metaworld_ml45_40e": {
-        "builder_dir": "/home/sora/tensorflow_datasets/metaworld_ml45_20e/1.0.0/",
+    # libero
+    "libero_10": {
+        "builder_dir": "~/tensorflow_datasets/libero_10/1.0.0/",
         "trajectory_length": 15,
         "step_map_fn": functools.partial(
             step_map_fn,
             map_observation=rt_1_map_observation,
-            map_action=metaworld_map_action,
+            map_action=libero_map_action,
+        ),
+    },
+    "libero_90": {
+        "builder_dir": "~/tensorflow_datasets/libero_90/1.0.0/",
+        "trajectory_length": 15,
+        "step_map_fn": functools.partial(
+            step_map_fn,
+            map_observation=rt_1_map_observation,
+            map_action=libero_map_action,
+        ),
+    },
+    "libero_goal": {
+        "builder_dir": "~/tensorflow_datasets/libero_goal/1.0.0/",
+        "trajectory_length": 15,
+        "step_map_fn": functools.partial(
+            step_map_fn,
+            map_observation=rt_1_map_observation,
+            map_action=libero_map_action,
+        ),
+    },
+    "libero_object": {
+        "builder_dir": "~/tensorflow_datasets/libero_object/1.0.0/",
+        "trajectory_length": 15,
+        "step_map_fn": functools.partial(
+            step_map_fn,
+            map_observation=rt_1_map_observation,
+            map_action=libero_map_action,
+        ),
+    },
+    "libero_spatial": {
+        "builder_dir": "~/tensorflow_datasets/libero_spatial/1.0.0/",
+        "trajectory_length": 15,
+        "step_map_fn": functools.partial(
+            step_map_fn,
+            map_observation=rt_1_map_observation,
+            map_action=libero_map_action,
         ),
     },
 }

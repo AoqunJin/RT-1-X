@@ -26,3 +26,6 @@ dlimp @ git+https://github.com/kvablack/dlimp@5edaa4691567873d495633f2708982b42e
 plotly >= 5.16.1
 scipy==1.12.0
 matplotlib
+rlds
+dm-reverb
+tqdm

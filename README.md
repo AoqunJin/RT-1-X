@@ -1,6 +1,6 @@
 # Google RT-1 Finetuning and Inference with JAX
 
-This repository provides a JAX-based implementation for fine-tuning and inference with Google's RT-1 model. It supports custom environments for fine-tuning and inference and includes integration with the MetaWorld environment.
+This repository provides a JAX-based implementation for fine-tuning and inference with Google's [RT-1-X model](https://robotics-transformer-x.github.io/). It supports custom environments for fine-tuning and inference and includes integration with the MetaWorld environment.
 
 ## Features
 - **Fine-tuning**: Easily fine-tune the RT-1 model using custom datasets.
@@ -15,6 +15,12 @@ This repository provides a JAX-based implementation for fine-tuning and inferenc
 The RT-1 model is a versatile architecture designed for robotics tasks, making it ideal for various real-world scenarios.
 
 ---
+
+## RT-1-X jax checkpoint
+A jax checkpoint that can be used by the flax checkpoint loader can be downloaded by
+```bash
+gsutil -m cp -r gs://gdm-robotics-open-x-embodiment/open_x_embodiment_and_rt_x_oss/rt_1_x_jax .
+```
 
 ## Fine-tuning
 
@@ -59,6 +65,11 @@ This repository is pre-integrated with the MetaWorld environment. Additional env
 Install the required dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+For GPU
+```bash
+pip install --upgrade "jax[cuda11_pip]==0.4.20" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
 ---

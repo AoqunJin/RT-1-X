@@ -3,5 +3,6 @@ outputs/
 wandb/
 sample_batch/
 tmp/
+history/
 *.log
 *.out
