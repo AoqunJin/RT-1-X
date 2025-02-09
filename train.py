@@ -1,4 +1,5 @@
 import os
+from absl import app, flags
 import flax
 import jax
 from jax.experimental import mesh_utils
@@ -40,7 +41,7 @@ NUM_VAL_STEPS = 100
 LOG_LOSS_EVERY_STEPS = 100
 DATASET_NAME_TO_WEIGHTS = {
     "train": {
-        # "metaworld_ml10_50e": 1.0,
+        "metaworld_ml10_50e": 1.0,
         # "metaworld_ml10_100e": 1.0,
         # "metaworld_ml45_50e": 1.0,
         # "metaworld_ml45_100e": 1.0,
@@ -58,7 +59,7 @@ WANDB_PROJECT_NAME = "metaworld_train"
 WANDB_RUN_NAME = "ml10_50e"
 
 
-def main():
+def main(_):
     wandb.init(name=WANDB_RUN_NAME, project=WANDB_PROJECT_NAME, mode="offline")
     configure_jax()
     
@@ -110,8 +111,8 @@ def main():
     # print_shapes(sample_batch)
     # print(sample_batch['action']['world_vector'])
     # print(sample_batch['observation']['natural_language_embedding'])
-    save_batch(sample_batch, output_dir="sample_batch")
-    exit()
+    # save_batch(sample_batch, output_dir="sample_batch")
+    
     ###########################################################################
     #                    Creating mesh and shardings.                         #
     ###########################################################################
@@ -184,9 +185,9 @@ def main():
     rng_repl = reshard(rng, shardings=replicate_sharding)
 
     # Load model
-    if CHECKPOINT_LOAD_DIR:
-        print(f"Loading model from {CHECKPOINT_LOAD_DIR}")
-        state_repl = load_model(CHECKPOINT_LOAD_DIR, state_repl)
+    if FLAGS.pretrained_path:
+        print(f"Loading model from {FLAGS.pretrained_path}")
+        state_repl = load_model(FLAGS.pretrained_path, state_repl)
 
     ###########################################################################
     #                             Model training.                             #
@@ -239,10 +240,10 @@ def main():
         # Save the model checkpoint periodically
         if (step + 1) % SAVE_CHECKPOINT_EVERY_STEPS == 0:
             print(f"Saving model at step {step}")
-            save_model(state_repl, os.path.join(CHECKPOINT_OUT_DIR, f"checkpoint_{step}"), step)
+            save_model(state_repl, FLAGS.save_dir, step)
 
     print(f"Training finished at step {step}")
 
 if __name__ == "__main__":
-    main()
+    app.run(main)
     

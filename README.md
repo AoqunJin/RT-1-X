@@ -67,9 +67,14 @@ Install the required dependencies:
 pip install -r requirements.txt
 ```
 
-For GPU
+Install jax for GPU
 ```bash
 pip install --upgrade "jax[cuda11_pip]==0.4.20" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+```
+
+Install jax for TPU
+```bash
+pip install --upgrade "jax[tpu]==0.4.20" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 ```
 
 ---

@@ -143,7 +143,7 @@ def combined_sampling(logits, key, k=None, p=None, temperature=1.0):
 class RT1Policy:
     """Runs inference with a RT-1 policy."""
 
-    def __init__(self, model, variables=None, seqlen=15, rng=None):
+    def __init__(self, model, variables=None, seqlen=15, rng=None, decoder_type="greedy"):
         self.model = model
         self.variables = variables
         self.seqlen = seqlen
@@ -152,8 +152,9 @@ class RT1Policy:
         else:
             self.rng = rng
         self._run_action_inference_jit = jax.jit(self._run_action_inference)
+        self.decoder_type = decoder_type
 
-    def _run_action_inference(self, observation, rng, decoder_type):
+    def _run_action_inference(self, observation, rng):
         """A jittable function for running inference."""
 
         # We add zero action tokens so that the shape is (seqlen, 11).
@@ -185,9 +186,9 @@ class RT1Policy:
         action_logits = action_logits[:, self.model.num_image_tokens - 1 : -1]
 
         # action_logp = jax.nn.softmax(action_logits)
-        if decoder_type == "greedy":
+        if self.decoder_type == "greedy":
             action_token = jnp.argmax(action_logits, axis=-1)
-        elif decoder_type == "kpt":  # Top-k -> Top-p -> Temperature sampling
+        elif self.decoder_type == "kpt":  # Top-k -> Top-p -> Temperature sampling
             _, sampe_rng = jax.random.split(rng)
             action_token = combined_sampling(action_logits, sampe_rng, k=5, p=0.9, temperature=1)
         else:
@@ -202,7 +203,7 @@ class RT1Policy:
 
         return detokenized
 
-    def action(self, observation, decoder_type="greedy"):
+    def action(self, observation):
         """Outputs the action given observation from the env."""
         # Assume obs has no batch dimensions.
         observation = copy.deepcopy(observation)
@@ -221,7 +222,7 @@ class RT1Policy:
         # observation['image'] = image
 
         self.rng, rng = jax.random.split(self.rng)
-        action = self._run_action_inference_jit(observation, rng, decoder_type)
+        action = self._run_action_inference_jit(observation, rng)
         action = jax.device_get(action)
 
         # Use the base pose mode if the episode if the network outputs an invalid

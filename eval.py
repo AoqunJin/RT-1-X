@@ -32,6 +32,8 @@ VOCAB_SIZE = 512
 NUM_IMAGE_TOKENS = 81
 DECODER_TYPE = "kpt"  # ["greedy" | "kpt"]
 CHECKPOINT_LOAD_DIR = "/path/to/models/rt_1_x_jax_output/checkpoint_x"
+# EMBED_LOAD_DIR = "/path/to/models/universal-sentence-encoder-tensorflow2-large-v2"
+EMBED_LOAD_DIR = "https://tfhub.dev/google/universal-sentence-encoder-large/5"
 WANDB_PROJECT_NAME = "metaworld_eval"
 WANDB_RUN_NAME = "ml10_50e"
 BENCHMARK = _env_dict.ML10_V2
@@ -121,11 +123,12 @@ def main():
     #                            Model evaluating.                            #
     ###########################################################################
 
-    embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-large/5")
+    embed = hub.load(EMBED_LOAD_DIR)
     policy = RT1Policy(
         rt1x_model,
         {"params": state_repl.params, "batch_stats": state_repl.batch_stats},
         seqlen=15,
+        decoder_type=DECODER_TYPE
     )
 
     for name in BENCHMARK[TEST_TYPE].keys():
@@ -165,7 +168,7 @@ def main():
                     # 'natural_language_embedding': jnp.ones((15, 512)),
                 }
                 # print(observation['image'].shape, observation['natural_language_embedding'].shape)
-                model_output = policy.action(observation, decoder_type=DECODER_TYPE)
+                model_output = policy.action(observation)
                 agent_action = np.concatenate(
                     (
                         model_output["world_vector"] / 2,

@@ -1,3 +1,4 @@
+from absl import app, flags
 import copy
 import jax
 from jax.experimental import mesh_utils
@@ -46,7 +47,7 @@ WANDB_PROJECT_NAME = "metaworld_train"
 WANDB_RUN_NAME = "ml10_50e"
 
 
-def main():
+def main(_):
     wandb.init(name=WANDB_RUN_NAME, project=WANDB_PROJECT_NAME, mode="offline")
     configure_jax()
     
@@ -251,5 +252,5 @@ def main():
                 
                 
 if __name__ == "__main__":
-    main()
+    app.run(main)
     
