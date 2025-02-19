@@ -185,9 +185,9 @@ def main(_):
     rng_repl = reshard(rng, shardings=replicate_sharding)
 
     # Load model
-    if FLAGS.pretrained_path:
-        print(f"Loading model from {FLAGS.pretrained_path}")
-        state_repl = load_model(FLAGS.pretrained_path, state_repl)
+    if CHECKPOINT_LOAD_DIR:
+        print(f"Loading model from {CHECKPOINT_LOAD_DIR}")
+        state_repl = load_model(CHECKPOINT_LOAD_DIR, state_repl)
 
     ###########################################################################
     #                             Model training.                             #
@@ -240,7 +240,7 @@ def main(_):
         # Save the model checkpoint periodically
         if (step + 1) % SAVE_CHECKPOINT_EVERY_STEPS == 0:
             print(f"Saving model at step {step}")
-            save_model(state_repl, FLAGS.save_dir, step)
+            save_model(state_repl, CHECKPOINT_OUT_DIR, step)
 
     print(f"Training finished at step {step}")
 
